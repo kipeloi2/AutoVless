@@ -119,10 +119,15 @@ generate_keys() {
 
 create_config() {
     print_status "Creating configuration..."
-    
+
     # Get server IP
     SERVER_IP=$(curl -s ifconfig.me)
-    
+
+    # Use variables from interactive setup or defaults
+    local port=${VPN_PORT:-443}
+    local dest_site=${DEST_SITE:-"www.microsoft.com:443"}
+    local server_name=${SERVER_NAME:-"www.microsoft.com"}
+
     cat > /usr/local/etc/xray/config.json << EOF
 {
     "log": {
@@ -132,7 +137,7 @@ create_config() {
     },
     "inbounds": [
         {
-            "port": 443,
+            "port": $port,
             "protocol": "vless",
             "settings": {
                 "clients": [
@@ -148,10 +153,10 @@ create_config() {
                 "security": "reality",
                 "realitySettings": {
                     "show": false,
-                    "dest": "www.microsoft.com:443",
+                    "dest": "$dest_site",
                     "xver": 0,
                     "serverNames": [
-                        "www.microsoft.com"
+                        "$server_name"
                     ],
                     "privateKey": "$PRIVATE_KEY",
                     "shortIds": [
@@ -267,37 +272,46 @@ test_and_start() {
 
 save_client_info() {
     print_status "Saving client info..."
-    
+
     SERVER_IP=$(curl -s ifconfig.me)
-    
+
+    # Use variables from interactive setup or defaults
+    local port=${VPN_PORT:-443}
+    local server_name=${SERVER_NAME:-"www.microsoft.com"}
+    local client_name=${CLIENT_NAME:-"My-VPN"}
+
     cat > /usr/local/etc/xray/client-info.json << EOF
 {
     "server_ip": "$SERVER_IP",
-    "port": 443,
+    "port": $port,
     "uuid": "$USER_UUID",
     "public_key": "$PUBLIC_KEY",
     "short_id": "$SHORT_ID",
-    "server_name": "www.microsoft.com",
+    "server_name": "$server_name",
+    "client_name": "$client_name",
     "protocol": "vless",
     "security": "reality",
     "flow": "xtls-rprx-vision"
 }
 EOF
-    
+
     print_success "Client info saved"
 }
 
 configure_firewall() {
     print_status "Configuring firewall..."
-    
+
+    # Use port from interactive setup or default
+    local port=${VPN_PORT:-443}
+
     if command -v ufw &> /dev/null; then
         ufw --force reset
         ufw default deny incoming
         ufw default allow outgoing
         ufw allow ssh
-        ufw allow 443
+        ufw allow $port
         ufw --force enable
-        print_success "Firewall configured"
+        print_success "Firewall configured for port $port"
     else
         print_warning "UFW not found, skipping firewall configuration"
     fi
@@ -306,28 +320,205 @@ configure_firewall() {
 show_result() {
     print_success "🎉 VPN installation completed!"
     echo
-    
+
     SERVER_IP=$(curl -s ifconfig.me)
-    VLESS_URL="vless://$USER_UUID@$SERVER_IP:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#Clean-Install-VPN"
-    
-    echo "Server: $SERVER_IP:443"
-    echo "UUID: $USER_UUID"
-    echo "Public Key: $PUBLIC_KEY"
-    echo "Short ID: $SHORT_ID"
+
+    # Use variables from interactive setup or defaults
+    local port=${VPN_PORT:-443}
+    local server_name=${SERVER_NAME:-"www.microsoft.com"}
+    local client_name=${CLIENT_NAME:-"My-VPN"}
+    local site_desc=${SITE_DESC:-"Microsoft"}
+
+    VLESS_URL="vless://$USER_UUID@$SERVER_IP:$port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$server_name&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#$client_name"
+
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    Информация для подключения               ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo
-    echo "VLESS URL:"
+    echo -e "${GREEN}Название клиента:${NC} $client_name"
+    echo -e "${GREEN}Сервер:${NC} $SERVER_IP:$port"
+    echo -e "${GREEN}Протокол:${NC} VLESS + Reality"
+    echo -e "${GREEN}Маскировка:${NC} $site_desc ($server_name)"
+    echo -e "${GREEN}UUID:${NC} $USER_UUID"
+    echo -e "${GREEN}Public Key:${NC} $PUBLIC_KEY"
+    echo -e "${GREEN}Short ID:${NC} $SHORT_ID"
+    echo
+    echo -e "${YELLOW}VLESS URL для мобильных приложений:${NC}"
     echo "$VLESS_URL"
+    echo
+    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║                      Полезные команды                       ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}Управление:${NC}"
+    echo "  ./vpn-manager.sh status    - Проверить статус"
+    echo "  ./vpn-manager.sh restart   - Перезапустить"
+    echo "  ./monitor.sh dashboard     - Мониторинг"
+    echo
+    echo -e "${GREEN}Клиентские конфигурации:${NC}"
+    echo "  ./generate-client-config.sh show     - Показать все конфигурации"
+    echo "  ./generate-client-config.sh qr       - Создать QR-код"
+    echo "  ./generate-client-config.sh package  - Создать пакет конфигураций"
+    echo
+    print_warning "💾 Сохраните эту информацию в безопасном месте!"
+}
+
+interactive_setup() {
+    echo
+    print_status "🎯 Интерактивная настройка VPN сервера"
+    echo
+
+    # Client name
+    echo -e "${YELLOW}Введите название клиента (будет отображаться в приложении):${NC}"
+    read -p "Название [My-VPN]: " CLIENT_NAME
+    CLIENT_NAME=${CLIENT_NAME:-My-VPN}
+
+    # Masquerade site selection
+    echo
+    echo -e "${YELLOW}Выберите сайт для маскировки трафика:${NC}"
+    echo "1) microsoft.com (рекомендуется - стабильно работает)"
+    echo "2) apple.com (популярный, не заблокирован)"
+    echo "3) cloudflare.com (отличная производительность)"
+    echo "4) github.com (для разработчиков)"
+    echo "5) amazon.com (крупный сервис)"
+    echo "6) stackoverflow.com (техническая тематика)"
+    echo "7) ubuntu.com (серверная тематика)"
+    echo "8) docker.com (DevOps тематика)"
+    echo "9) Свой сайт"
+
+    read -p "Ваш выбор [1]: " SITE_CHOICE
+
+    case ${SITE_CHOICE:-1} in
+        1)
+            DEST_SITE="www.microsoft.com:443"
+            SERVER_NAME="www.microsoft.com"
+            SITE_DESC="Microsoft"
+            ;;
+        2)
+            DEST_SITE="www.apple.com:443"
+            SERVER_NAME="www.apple.com"
+            SITE_DESC="Apple"
+            ;;
+        3)
+            DEST_SITE="www.cloudflare.com:443"
+            SERVER_NAME="www.cloudflare.com"
+            SITE_DESC="Cloudflare"
+            ;;
+        4)
+            DEST_SITE="github.com:443"
+            SERVER_NAME="github.com"
+            SITE_DESC="GitHub"
+            ;;
+        5)
+            DEST_SITE="www.amazon.com:443"
+            SERVER_NAME="www.amazon.com"
+            SITE_DESC="Amazon"
+            ;;
+        6)
+            DEST_SITE="stackoverflow.com:443"
+            SERVER_NAME="stackoverflow.com"
+            SITE_DESC="Stack Overflow"
+            ;;
+        7)
+            DEST_SITE="ubuntu.com:443"
+            SERVER_NAME="ubuntu.com"
+            SITE_DESC="Ubuntu"
+            ;;
+        8)
+            DEST_SITE="www.docker.com:443"
+            SERVER_NAME="www.docker.com"
+            SITE_DESC="Docker"
+            ;;
+        9)
+            echo
+            read -p "Введите домен (например, example.com): " CUSTOM_SITE
+            if [[ $CUSTOM_SITE =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                DEST_SITE="$CUSTOM_SITE:443"
+                SERVER_NAME="$CUSTOM_SITE"
+                SITE_DESC="$CUSTOM_SITE"
+            else
+                print_error "Неверный домен, используем microsoft.com"
+                DEST_SITE="www.microsoft.com:443"
+                SERVER_NAME="www.microsoft.com"
+                SITE_DESC="Microsoft"
+            fi
+            ;;
+        *)
+            DEST_SITE="www.microsoft.com:443"
+            SERVER_NAME="www.microsoft.com"
+            SITE_DESC="Microsoft"
+            ;;
+    esac
+
+    # Port selection
+    echo
+    echo -e "${YELLOW}Выберите порт для VPN сервера:${NC}"
+    echo "1) 443 (рекомендуется - стандартный HTTPS)"
+    echo "2) 8443 (альтернативный HTTPS)"
+    echo "3) 2053 (Cloudflare compatible)"
+    echo "4) 2083 (альтернативный)"
+    echo "5) Свой порт"
+
+    read -p "Ваш выбор [1]: " PORT_CHOICE
+
+    case ${PORT_CHOICE:-1} in
+        1) VPN_PORT=443 ;;
+        2) VPN_PORT=8443 ;;
+        3) VPN_PORT=2053 ;;
+        4) VPN_PORT=2083 ;;
+        5)
+            read -p "Введите порт (1-65535): " CUSTOM_PORT
+            if [[ $CUSTOM_PORT =~ ^[0-9]+$ ]] && [[ $CUSTOM_PORT -ge 1 ]] && [[ $CUSTOM_PORT -le 65535 ]]; then
+                VPN_PORT=$CUSTOM_PORT
+            else
+                print_error "Неверный порт, используем 443"
+                VPN_PORT=443
+            fi
+            ;;
+        *) VPN_PORT=443 ;;
+    esac
+
+    # Confirmation
+    echo
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    Параметры установки                      ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}Название клиента:${NC} $CLIENT_NAME"
+    echo -e "${GREEN}Маскировка:${NC} $SITE_DESC ($SERVER_NAME)"
+    echo -e "${GREEN}Порт:${NC} $VPN_PORT"
+    echo
+
+    read -p "Продолжить установку с этими параметрами? [y/N]: " CONFIRM
+
+    if [[ ! $CONFIRM =~ ^[Yy]$ ]]; then
+        print_error "Установка отменена пользователем"
+        exit 0
+    fi
 }
 
 main() {
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║                    Clean VPN Installation                   ║"
-    echo "║                  Full Clean and Reinstall                   ║"
+    echo "║                    🚀 VPN Auto-Setup Tool 🚀                ║"
+    echo "║                  VLESS + Reality Protocol                   ║"
+    echo "║                   Ubuntu 24.04.02 Ready                    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-    
+
     check_root
+
+    # Check if running in interactive mode
+    if [[ -t 0 ]]; then
+        interactive_setup
+    else
+        # Non-interactive mode with defaults
+        CLIENT_NAME="My-VPN"
+        DEST_SITE="www.microsoft.com:443"
+        SERVER_NAME="www.microsoft.com"
+        SITE_DESC="Microsoft"
+        VPN_PORT=443
+        print_status "Запуск в неинтерактивном режиме с настройками по умолчанию"
+    fi
+
     clean_previous_installation
     install_dependencies
     download_and_install_xray

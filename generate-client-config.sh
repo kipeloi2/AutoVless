@@ -45,7 +45,7 @@ load_client_info() {
         print_error "Client info file not found. Please run the installation script first."
         exit 1
     fi
-    
+
     CLIENT_INFO=$(cat "$CONFIG_DIR/client-info.json")
     SERVER_IP=$(echo "$CLIENT_INFO" | jq -r '.server_ip')
     PORT=$(echo "$CLIENT_INFO" | jq -r '.port')
@@ -53,10 +53,11 @@ load_client_info() {
     PUBLIC_KEY=$(echo "$CLIENT_INFO" | jq -r '.public_key')
     SHORT_ID=$(echo "$CLIENT_INFO" | jq -r '.short_id')
     SERVER_NAME=$(echo "$CLIENT_INFO" | jq -r '.server_name')
+    DEFAULT_CLIENT_NAME=$(echo "$CLIENT_INFO" | jq -r '.client_name // "My-VPN"')
 }
 
 generate_vless_url() {
-    local name="${1:-VPN-Reality}"
+    local name="${1:-$DEFAULT_CLIENT_NAME}"
     echo "vless://$UUID@$SERVER_IP:$PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SERVER_NAME&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#$name"
 }
 
