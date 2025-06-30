@@ -192,15 +192,12 @@ Documentation=https://github.com/xtls/xray-core
 After=network.target nss-lookup.target
 
 [Service]
-User=nobody
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
+Type=simple
+User=root
 ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
 Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
-LimitNOFILE=1000000
+RestartSec=5s
+LimitNOFILE=infinity
 
 [Install]
 WantedBy=multi-user.target
@@ -214,23 +211,56 @@ EOF
 
 test_and_start() {
     print_status "Testing configuration..."
-    
+
     if /usr/local/bin/xray -test -config /usr/local/etc/xray/config.json; then
         print_success "Configuration is valid"
     else
         print_error "Configuration is invalid"
+        cat /usr/local/etc/xray/config.json
         exit 1
     fi
-    
-    print_status "Starting service..."
-    systemctl start xray
+
+    print_status "Checking port availability..."
+    if netstat -tlnp | grep -q ":443 "; then
+        print_warning "Port 443 is already in use:"
+        netstat -tlnp | grep ":443 "
+        print_status "Trying to free port 443..."
+        # Try to stop common services that might use port 443
+        systemctl stop apache2 2>/dev/null || true
+        systemctl stop nginx 2>/dev/null || true
+        systemctl stop httpd 2>/dev/null || true
+        sleep 2
+    fi
+
+    print_status "Testing direct Xray execution..."
+    timeout 5s /usr/local/bin/xray run -config /usr/local/etc/xray/config.json &
+    XRAY_PID=$!
     sleep 2
-    
+
+    if kill -0 $XRAY_PID 2>/dev/null; then
+        print_success "Xray can run directly"
+        kill $XRAY_PID 2>/dev/null || true
+    else
+        print_error "Xray fails to run directly"
+        print_error "Trying to run Xray manually for debugging..."
+        /usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+        exit 1
+    fi
+
+    print_status "Starting systemd service..."
+    systemctl start xray
+    sleep 3
+
     if systemctl is-active --quiet xray; then
         print_success "Service started successfully"
     else
         print_error "Failed to start service"
-        systemctl status xray
+        print_error "Service status:"
+        systemctl status xray --no-pager -l
+        print_error "Recent logs:"
+        journalctl -u xray --no-pager -n 20
+        print_error "Configuration content:"
+        cat /usr/local/etc/xray/config.json
         exit 1
     fi
 }
