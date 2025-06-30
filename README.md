@@ -37,8 +37,8 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/kipeloi2/leposaq.git
-cd leposaq
+git clone https://github.com/kipeloi2/AutoVless.git
+cd AutoVless
 
 # Быстрое развертывание одной командой
 sudo ./quick-deploy.sh

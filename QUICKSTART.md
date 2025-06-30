@@ -4,8 +4,8 @@
 
 ```bash
 # Скачайте репозиторий
-git clone https://github.com/kipeloi2/leposaq.git
-cd leposaq
+git clone https://github.com/kipeloi2/AutoVless.git
+cd AutoVless
 
 # Запустите быстрое развертывание
 sudo ./quick-deploy.sh
