@@ -1,6 +1,13 @@
 # 🚀 VPN Auto-Setup Tool
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04.02-orange.svg)](https://ubuntu.com/)
+[![Protocol](https://img.shields.io/badge/Protocol-VLESS%20%2B%20Reality-blue.svg)](https://github.com/XTLS/Xray-core)
+[![Language](https://img.shields.io/badge/Language-Bash-green.svg)](https://www.gnu.org/software/bash/)
+
 Автоматическая установка и настройка VPN-сервера с протоколом **VLESS + Reality** на Ubuntu 24.04.02. Максимальная скрытность и производительность для обхода блокировок.
+
+> **⚡ Быстрый старт:** `sudo ./quick-deploy.sh` - и ваш VPN готов за 5 минут!
 
 ## ✨ Особенности
 
@@ -12,44 +19,42 @@
 - 📊 **Мониторинг** - инструменты для отслеживания работы сервера
 - 👥 **Многопользовательский режим** - поддержка нескольких клиентов
 
-## 🎯 Поддерживаемые приложения
+## 📱 Поддерживаемые приложения
 
-### Android
-- **v2rayNG** (рекомендуется)
-- Clash for Android
-- SagerNet
+| Платформа | Рекомендуемое приложение | Альтернативы |
+|-----------|-------------------------|--------------|
+| 🤖 **Android** | [v2rayNG](https://play.google.com/store/apps/details?id=com.v2ray.ang) | Clash for Android, SagerNet |
+| 🍎 **iOS** | [Shadowrocket](https://apps.apple.com/app/shadowrocket/id932747118) ($2.99) | Quantumult X, Stash |
+| 🪟 **Windows** | [v2rayN](https://github.com/2dust/v2rayN) | Clash for Windows, Qv2ray |
+| 🍎 **macOS** | [ClashX](https://github.com/yichengchen/clashX) | Qv2ray |
+| 🐧 **Linux** | [Qv2ray](https://github.com/Qv2ray/Qv2ray) | Clash |
 
-### iOS
-- **Shadowrocket** (рекомендуется)
-- Quantumult X
-- Stash
-
-### Windows
-- v2rayN
-- Clash for Windows
-- Qv2ray
-
-### macOS/Linux
-- ClashX (macOS)
-- Qv2ray (кроссплатформенный)
-- Clash
+> 💡 **Совет:** Для мобильных устройств рекомендуем v2rayNG (Android) и Shadowrocket (iOS) - они лучше всего поддерживают протокол VLESS + Reality.
 
 ## 🚀 Быстрый старт
 
-### 1. Установка VPN-сервера
+### 1. Скачивание и установка
 
 ```bash
-# Скачайте скрипт установки
-wget https://raw.githubusercontent.com/your-repo/install-vpn.sh
+# Клонируйте репозиторий
+git clone https://github.com/kipeloi2/leposaq.git
+cd leposaq
 
-# Сделайте его исполняемым
-chmod +x install-vpn.sh
+# Быстрое развертывание одной командой
+sudo ./quick-deploy.sh
+```
+
+### 2. Или пошаговая установка
+
+```bash
+# Сделайте скрипты исполняемыми
+chmod +x *.sh
 
 # Запустите установку (требуются права root)
 sudo ./install-vpn.sh
 ```
 
-### 2. Получение конфигурации для телефона
+### 3. Получение конфигурации для телефона
 
 ```bash
 # Показать все конфигурации
@@ -62,7 +67,7 @@ sudo ./install-vpn.sh
 ./generate-client-config.sh qr mobile
 ```
 
-### 3. Настройка на телефоне
+### 4. Настройка на телефоне
 
 1. **Установите приложение:**
    - Android: v2rayNG из Google Play
@@ -75,6 +80,36 @@ sudo ./install-vpn.sh
 3. **Подключитесь:**
    - Нажмите на созданное подключение
    - Активируйте VPN
+
+## 🎬 Демонстрация
+
+После установки вы получите:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    Информация для подключения               ║
+╚══════════════════════════════════════════════════════════════╝
+
+Сервер: 192.168.1.100:443
+Протокол: VLESS + Reality
+Маскировка: www.microsoft.com
+UUID: 12345678-1234-1234-1234-123456789abc
+
+VLESS URL для мобильных приложений:
+vless://12345678-1234-1234-1234-123456789abc@192.168.1.100:443?...
+
+╔══════════════════════════════════════════════════════════════╗
+║                      Полезные команды                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+vpn-status    - Проверить статус
+vpn-restart   - Перезапустить сервис
+vpn-config    - Показать конфигурации
+vpn-qr        - Создать QR-код
+vpn-monitor   - Дашборд мониторинга
+```
+
+> 📖 Полная демонстрация доступна в файле [DEMO.md](DEMO.md)
 
 ## 📋 Управление сервером
 
