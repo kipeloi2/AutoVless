@@ -191,20 +191,30 @@ make_scripts_executable() {
 
 run_installation() {
     print_status "Запуск основной установки..."
-    
+
     # Modify install script with our parameters
     sed -i "s/DEFAULT_PORT=443/DEFAULT_PORT=$VPN_PORT/" install-vpn.sh
     sed -i "s/DEFAULT_DEST_SITE=\"www.microsoft.com:443\"/DEFAULT_DEST_SITE=\"$DEST_SITE\"/" install-vpn.sh
     sed -i "s/DEFAULT_SERVER_NAME=\"www.microsoft.com\"/DEFAULT_SERVER_NAME=\"$SERVER_NAME\"/" install-vpn.sh
-    
+
     # Run installation
     ./install-vpn.sh
-    
+
     if [[ $? -eq 0 ]]; then
         print_success "Основная установка завершена успешно"
     else
-        print_error "Ошибка при установке"
-        exit 1
+        print_warning "Основная установка завершилась с ошибкой, пытаемся исправить..."
+
+        # Try to fix the installation
+        export VPN_PORT DEST_SITE SERVER_NAME
+        ./fix-installation.sh
+
+        if [[ $? -eq 0 ]]; then
+            print_success "Установка исправлена успешно"
+        else
+            print_error "Не удалось исправить установку"
+            exit 1
+        fi
     fi
 }
 

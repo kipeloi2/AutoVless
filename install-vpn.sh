@@ -76,20 +76,46 @@ install_dependencies() {
 
 generate_keys() {
     print_status "Generating cryptographic keys..."
-    
+
     # Generate UUID for user
     USER_UUID=$(uuidgen)
-    
-    # Generate private key for Reality
-    PRIVATE_KEY=$(openssl genpkey -algorithm X25519 | openssl pkey -text -noout | grep -A 5 "priv:" | tail -n +2 | tr -d '[:space:]:' | xxd -r -p | base64)
-    
-    # Generate public key
-    PUBLIC_KEY=$(echo "$PRIVATE_KEY" | base64 -d | xxd -p -c 32 | xxd -r -p | openssl pkey -inform raw -keyform raw -pubin -pubout -outform DER | tail -c 32 | base64)
-    
-    # Generate short ID
+
+    # Generate Reality keys using Xray's built-in command
+    if command -v /usr/local/bin/xray &> /dev/null; then
+        # Use Xray to generate Reality keys
+        REALITY_KEYS=$(/usr/local/bin/xray x25519)
+        PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | cut -d' ' -f3)
+        PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | cut -d' ' -f3)
+    else
+        # Fallback method using openssl
+        print_warning "Xray not found, using openssl fallback..."
+
+        # Generate X25519 private key
+        TEMP_KEY=$(mktemp)
+        openssl genpkey -algorithm X25519 -out "$TEMP_KEY" 2>/dev/null
+
+        # Extract private key in base64
+        PRIVATE_KEY=$(openssl pkey -in "$TEMP_KEY" -text -noout | grep -A 3 "priv:" | tail -n +2 | tr -d '[:space:]:' | xxd -r -p | base64 -w 0)
+
+        # Extract public key in base64
+        PUBLIC_KEY=$(openssl pkey -in "$TEMP_KEY" -pubout -outform DER 2>/dev/null | tail -c 32 | base64 -w 0)
+
+        rm -f "$TEMP_KEY"
+    fi
+
+    # Generate short ID (8 hex characters)
     SHORT_ID=$(openssl rand -hex 8)
-    
+
+    # Validate keys
+    if [[ -z "$PRIVATE_KEY" || -z "$PUBLIC_KEY" || -z "$SHORT_ID" ]]; then
+        print_error "Failed to generate keys properly"
+        exit 1
+    fi
+
     print_success "Keys generated successfully"
+    print_status "Private Key: $PRIVATE_KEY"
+    print_status "Public Key: $PUBLIC_KEY"
+    print_status "Short ID: $SHORT_ID"
 }
 
 download_xray() {
@@ -272,16 +298,31 @@ EOF
 }
 
 start_service() {
+    print_status "Testing configuration before starting service..."
+
+    # Test configuration first
+    if /usr/local/bin/xray -test -config "$CONFIG_DIR/config.json"; then
+        print_success "Configuration is valid"
+    else
+        print_error "Configuration is invalid!"
+        print_error "Please check the configuration file: $CONFIG_DIR/config.json"
+        cat "$CONFIG_DIR/config.json"
+        exit 1
+    fi
+
     print_status "Starting Xray service..."
-    
+
     systemctl start xray
-    sleep 2
-    
+    sleep 3
+
     if systemctl is-active --quiet xray; then
         print_success "Xray service started successfully"
     else
         print_error "Failed to start Xray service"
-        systemctl status xray
+        print_error "Service status:"
+        systemctl status xray --no-pager -l
+        print_error "Recent logs:"
+        journalctl -u xray --no-pager -n 20
         exit 1
     fi
 }
@@ -318,12 +359,12 @@ main() {
     echo "║                   Ubuntu 24.04.02 Ready                    ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-    
+
     check_root
     check_system
     install_dependencies
-    generate_keys
     download_xray
+    generate_keys
     create_config
     create_service
     configure_firewall
