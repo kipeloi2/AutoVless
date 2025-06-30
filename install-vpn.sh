@@ -1,29 +1,16 @@
 #!/bin/bash
 
-# VPN Auto-Setup Script for Ubuntu 24.04.02
-# Supports VLESS + Reality protocol for maximum stealth
-# Author: VPN Auto-Setup Tool
+# Clean Installation Script
+# Полная очистка и переустановка VPN сервера
 
 set -e
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Configuration
-XRAY_VERSION="1.8.8"
-INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="/usr/local/etc/xray"
-LOG_DIR="/var/log/xray"
-SERVICE_FILE="/etc/systemd/system/xray.service"
-
-# Default settings
-DEFAULT_PORT=443
-DEFAULT_DEST_SITE="www.microsoft.com:443"
-DEFAULT_SERVER_NAME="www.microsoft.com"
+NC='\033[0m'
 
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -31,10 +18,6 @@ print_status() {
 
 print_success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
 print_error() {
@@ -48,21 +31,23 @@ check_root() {
     fi
 }
 
-check_system() {
-    print_status "Checking system requirements..."
+clean_previous_installation() {
+    print_status "Cleaning previous installation..."
     
-    # Check Ubuntu version
-    if ! grep -q "Ubuntu 24.04" /etc/os-release; then
-        print_warning "This script is optimized for Ubuntu 24.04, but will try to continue..."
-    fi
+    # Stop and disable service
+    systemctl stop xray 2>/dev/null || true
+    systemctl disable xray 2>/dev/null || true
     
-    # Check internet connection
-    if ! ping -c 1 google.com &> /dev/null; then
-        print_error "No internet connection available"
-        exit 1
-    fi
+    # Remove files
+    rm -rf /usr/local/etc/xray
+    rm -rf /var/log/xray
+    rm -f /etc/systemd/system/xray.service
+    rm -f /usr/local/bin/xray
     
-    print_success "System check passed"
+    # Reload systemd
+    systemctl daemon-reload
+    
+    print_success "Previous installation cleaned"
 }
 
 install_dependencies() {
@@ -74,52 +59,8 @@ install_dependencies() {
     print_success "Dependencies installed"
 }
 
-generate_keys() {
-    print_status "Generating cryptographic keys..."
-
-    # Generate UUID for user
-    USER_UUID=$(uuidgen)
-
-    # Generate Reality keys using Xray's built-in command
-    if command -v /usr/local/bin/xray &> /dev/null; then
-        # Use Xray to generate Reality keys
-        REALITY_KEYS=$(/usr/local/bin/xray x25519)
-        PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | cut -d' ' -f3)
-        PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | cut -d' ' -f3)
-    else
-        # Fallback method using openssl
-        print_warning "Xray not found, using openssl fallback..."
-
-        # Generate X25519 private key
-        TEMP_KEY=$(mktemp)
-        openssl genpkey -algorithm X25519 -out "$TEMP_KEY" 2>/dev/null
-
-        # Extract private key in base64
-        PRIVATE_KEY=$(openssl pkey -in "$TEMP_KEY" -text -noout | grep -A 3 "priv:" | tail -n +2 | tr -d '[:space:]:' | xxd -r -p | base64 -w 0)
-
-        # Extract public key in base64
-        PUBLIC_KEY=$(openssl pkey -in "$TEMP_KEY" -pubout -outform DER 2>/dev/null | tail -c 32 | base64 -w 0)
-
-        rm -f "$TEMP_KEY"
-    fi
-
-    # Generate short ID (8 hex characters)
-    SHORT_ID=$(openssl rand -hex 8)
-
-    # Validate keys
-    if [[ -z "$PRIVATE_KEY" || -z "$PUBLIC_KEY" || -z "$SHORT_ID" ]]; then
-        print_error "Failed to generate keys properly"
-        exit 1
-    fi
-
-    print_success "Keys generated successfully"
-    print_status "Private Key: $PRIVATE_KEY"
-    print_status "Public Key: $PUBLIC_KEY"
-    print_status "Short ID: $SHORT_ID"
-}
-
-download_xray() {
-    print_status "Downloading Xray-core v${XRAY_VERSION}..."
+download_and_install_xray() {
+    print_status "Downloading and installing Xray..."
     
     # Detect architecture
     ARCH=$(uname -m)
@@ -131,43 +72,67 @@ download_xray() {
     esac
     
     # Download Xray
-    DOWNLOAD_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-${ARCH}.zip"
-    
     cd /tmp
-    wget -O xray.zip "$DOWNLOAD_URL"
+    wget -O xray.zip "https://github.com/XTLS/Xray-core/releases/download/v1.8.8/Xray-linux-${ARCH}.zip"
     unzip -o xray.zip
     
     # Install Xray
-    mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
-    cp xray "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/xray"
-
-    # Set proper permissions for log directory
-    chown -R nobody:nogroup "$LOG_DIR"
-    chmod 755 "$LOG_DIR"
+    mkdir -p /usr/local/bin /usr/local/etc/xray /var/log/xray
+    cp xray /usr/local/bin/
+    chmod +x /usr/local/bin/xray
+    
+    # Set proper permissions
+    chown -R nobody:nogroup /var/log/xray
+    chmod 755 /var/log/xray
+    
+    # Create log files
+    touch /var/log/xray/access.log /var/log/xray/error.log
+    chown nobody:nogroup /var/log/xray/access.log /var/log/xray/error.log
+    chmod 644 /var/log/xray/access.log /var/log/xray/error.log
     
     # Clean up
     rm -f xray.zip xray geoip.dat geosite.dat
     
-    print_success "Xray installed successfully"
+    print_success "Xray installed"
+}
+
+generate_keys() {
+    print_status "Generating keys..."
+    
+    # Generate UUID
+    USER_UUID=$(uuidgen)
+    
+    # Generate Reality keys
+    REALITY_OUTPUT=$(/usr/local/bin/xray x25519)
+    PRIVATE_KEY=$(echo "$REALITY_OUTPUT" | grep "Private key:" | awk '{print $3}')
+    PUBLIC_KEY=$(echo "$REALITY_OUTPUT" | grep "Public key:" | awk '{print $3}')
+    
+    # Generate short ID
+    SHORT_ID=$(openssl rand -hex 8)
+    
+    print_success "Keys generated"
+    echo "UUID: $USER_UUID"
+    echo "Private Key: $PRIVATE_KEY"
+    echo "Public Key: $PUBLIC_KEY"
+    echo "Short ID: $SHORT_ID"
 }
 
 create_config() {
-    print_status "Creating Xray configuration..."
+    print_status "Creating configuration..."
     
     # Get server IP
     SERVER_IP=$(curl -s ifconfig.me)
     
-    cat > "$CONFIG_DIR/config.json" << EOF
+    cat > /usr/local/etc/xray/config.json << EOF
 {
     "log": {
         "loglevel": "warning",
-        "access": "$LOG_DIR/access.log",
-        "error": "$LOG_DIR/error.log"
+        "access": "/var/log/xray/access.log",
+        "error": "/var/log/xray/error.log"
     },
     "inbounds": [
         {
-            "port": $DEFAULT_PORT,
+            "port": 443,
             "protocol": "vless",
             "settings": {
                 "clients": [
@@ -183,10 +148,10 @@ create_config() {
                 "security": "reality",
                 "realitySettings": {
                     "show": false,
-                    "dest": "$DEFAULT_DEST_SITE",
+                    "dest": "www.microsoft.com:443",
                     "xver": 0,
                     "serverNames": [
-                        "$DEFAULT_SERVER_NAME"
+                        "www.microsoft.com"
                     ],
                     "privateKey": "$PRIVATE_KEY",
                     "shortIds": [
@@ -207,26 +172,12 @@ create_config() {
         {
             "protocol": "freedom",
             "settings": {}
-        },
-        {
-            "protocol": "blackhole",
-            "settings": {},
-            "tag": "blocked"
         }
-    ],
-    "routing": {
-        "rules": [
-            {
-                "type": "field",
-                "protocol": [
-                    "bittorrent"
-                ],
-                "outboundTag": "blocked"
-            }
-        ]
-    }
+    ]
 }
 EOF
+    
+    chmod 644 /usr/local/etc/xray/config.json
     
     print_success "Configuration created"
 }
@@ -234,22 +185,19 @@ EOF
 create_service() {
     print_status "Creating systemd service..."
     
-    cat > "$SERVICE_FILE" << EOF
+    cat > /etc/systemd/system/xray.service << EOF
 [Unit]
 Description=Xray Service
 Documentation=https://github.com/xtls/xray-core
 After=network.target nss-lookup.target
 
 [Service]
-User=nobody
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
-ExecStart=$INSTALL_DIR/xray run -config $CONFIG_DIR/config.json
+Type=simple
+User=root
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
 Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
-LimitNOFILE=1000000
+RestartSec=5s
+LimitNOFILE=infinity
 
 [Install]
 WantedBy=multi-user.target
@@ -258,124 +206,138 @@ EOF
     systemctl daemon-reload
     systemctl enable xray
     
-    print_success "Service created and enabled"
+    print_success "Service created"
 }
 
-configure_firewall() {
-    print_status "Configuring firewall..."
-    
-    # Install ufw if not present
-    if ! command -v ufw &> /dev/null; then
-        apt install -y ufw
+test_and_start() {
+    print_status "Testing configuration..."
+
+    if /usr/local/bin/xray -test -config /usr/local/etc/xray/config.json; then
+        print_success "Configuration is valid"
+    else
+        print_error "Configuration is invalid"
+        cat /usr/local/etc/xray/config.json
+        exit 1
     fi
-    
-    # Configure UFW
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow ssh
-    ufw allow $DEFAULT_PORT
-    ufw --force enable
-    
-    print_success "Firewall configured"
+
+    print_status "Checking port availability..."
+    if netstat -tlnp | grep -q ":443 "; then
+        print_warning "Port 443 is already in use:"
+        netstat -tlnp | grep ":443 "
+        print_status "Trying to free port 443..."
+        # Try to stop common services that might use port 443
+        systemctl stop apache2 2>/dev/null || true
+        systemctl stop nginx 2>/dev/null || true
+        systemctl stop httpd 2>/dev/null || true
+        sleep 2
+    fi
+
+    print_status "Testing direct Xray execution..."
+    timeout 5s /usr/local/bin/xray run -config /usr/local/etc/xray/config.json &
+    XRAY_PID=$!
+    sleep 2
+
+    if kill -0 $XRAY_PID 2>/dev/null; then
+        print_success "Xray can run directly"
+        kill $XRAY_PID 2>/dev/null || true
+    else
+        print_error "Xray fails to run directly"
+        print_error "Trying to run Xray manually for debugging..."
+        /usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+        exit 1
+    fi
+
+    print_status "Starting systemd service..."
+    systemctl start xray
+    sleep 3
+
+    if systemctl is-active --quiet xray; then
+        print_success "Service started successfully"
+    else
+        print_error "Failed to start service"
+        print_error "Service status:"
+        systemctl status xray --no-pager -l
+        print_error "Recent logs:"
+        journalctl -u xray --no-pager -n 20
+        print_error "Configuration content:"
+        cat /usr/local/etc/xray/config.json
+        exit 1
+    fi
 }
 
 save_client_info() {
-    print_status "Saving client configuration..."
+    print_status "Saving client info..."
     
-    # Create client info file
-    cat > "$CONFIG_DIR/client-info.json" << EOF
+    SERVER_IP=$(curl -s ifconfig.me)
+    
+    cat > /usr/local/etc/xray/client-info.json << EOF
 {
     "server_ip": "$SERVER_IP",
-    "port": $DEFAULT_PORT,
+    "port": 443,
     "uuid": "$USER_UUID",
     "public_key": "$PUBLIC_KEY",
     "short_id": "$SHORT_ID",
-    "server_name": "$DEFAULT_SERVER_NAME",
+    "server_name": "www.microsoft.com",
     "protocol": "vless",
     "security": "reality",
     "flow": "xtls-rprx-vision"
 }
 EOF
     
-    print_success "Client information saved to $CONFIG_DIR/client-info.json"
+    print_success "Client info saved"
 }
 
-start_service() {
-    print_status "Testing configuration before starting service..."
-
-    # Test configuration first
-    if /usr/local/bin/xray -test -config "$CONFIG_DIR/config.json"; then
-        print_success "Configuration is valid"
+configure_firewall() {
+    print_status "Configuring firewall..."
+    
+    if command -v ufw &> /dev/null; then
+        ufw --force reset
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow ssh
+        ufw allow 443
+        ufw --force enable
+        print_success "Firewall configured"
     else
-        print_error "Configuration is invalid!"
-        print_error "Please check the configuration file: $CONFIG_DIR/config.json"
-        cat "$CONFIG_DIR/config.json"
-        exit 1
-    fi
-
-    print_status "Starting Xray service..."
-
-    systemctl start xray
-    sleep 3
-
-    if systemctl is-active --quiet xray; then
-        print_success "Xray service started successfully"
-    else
-        print_error "Failed to start Xray service"
-        print_error "Service status:"
-        systemctl status xray --no-pager -l
-        print_error "Recent logs:"
-        journalctl -u xray --no-pager -n 20
-        exit 1
+        print_warning "UFW not found, skipping firewall configuration"
     fi
 }
 
-show_client_config() {
-    print_success "=== VPN Installation Completed Successfully! ==="
+show_result() {
+    print_success "🎉 VPN installation completed!"
     echo
-    print_status "Server Information:"
-    echo "  Server IP: $SERVER_IP"
-    echo "  Port: $DEFAULT_PORT"
-    echo "  Protocol: VLESS + Reality"
+    
+    SERVER_IP=$(curl -s ifconfig.me)
+    VLESS_URL="vless://$USER_UUID@$SERVER_IP:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#Clean-Install-VPN"
+    
+    echo "Server: $SERVER_IP:443"
+    echo "UUID: $USER_UUID"
+    echo "Public Key: $PUBLIC_KEY"
+    echo "Short ID: $SHORT_ID"
     echo
-    print_status "Client Configuration:"
-    echo "  UUID: $USER_UUID"
-    echo "  Public Key: $PUBLIC_KEY"
-    echo "  Short ID: $SHORT_ID"
-    echo "  Server Name: $DEFAULT_SERVER_NAME"
-    echo
-    print_status "VLESS URL for mobile apps:"
-    VLESS_URL="vless://$USER_UUID@$SERVER_IP:$DEFAULT_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$DEFAULT_SERVER_NAME&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#VPN-Reality"
+    echo "VLESS URL:"
     echo "$VLESS_URL"
-    echo
-    print_warning "Save this information! You'll need it to configure your mobile client."
-    print_status "Use './vpn-manager.sh' to manage the service"
-    print_status "Use './generate-client-config.sh' to generate QR codes and configs"
 }
 
 main() {
-    clear
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║                    VPN Auto-Setup Tool                      ║"
-    echo "║                  VLESS + Reality Protocol                   ║"
-    echo "║                   Ubuntu 24.04.02 Ready                    ║"
+    echo "║                    Clean VPN Installation                   ║"
+    echo "║                  Full Clean and Reinstall                   ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-
+    
     check_root
-    check_system
+    clean_previous_installation
     install_dependencies
-    download_xray
+    download_and_install_xray
     generate_keys
     create_config
     create_service
     configure_firewall
+    test_and_start
     save_client_info
-    start_service
-    show_client_config
+    show_result
 }
 
-# Run main function
 main "$@"
