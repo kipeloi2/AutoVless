@@ -141,6 +141,10 @@ download_xray() {
     mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
     cp xray "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR/xray"
+
+    # Set proper permissions for log directory
+    chown -R nobody:nogroup "$LOG_DIR"
+    chmod 755 "$LOG_DIR"
     
     # Clean up
     rm -f xray.zip xray geoip.dat geosite.dat

@@ -193,7 +193,13 @@ EOF
     
     # Set proper permissions
     chown -R nobody:nogroup "$CONFIG_DIR" "$LOG_DIR" 2>/dev/null || true
+    chmod 755 "$LOG_DIR"
     chmod 644 "$CONFIG_DIR/config.json"
+
+    # Create log files with proper permissions
+    touch "$LOG_DIR/access.log" "$LOG_DIR/error.log"
+    chown nobody:nogroup "$LOG_DIR/access.log" "$LOG_DIR/error.log"
+    chmod 644 "$LOG_DIR/access.log" "$LOG_DIR/error.log"
     
     print_success "Configuration created successfully"
 }
